@@ -34,6 +34,14 @@
 		// You can add a code-partition
 		// Then add image-source to the &cpu1_launcher on cpu0
 		// zephyr,code-partition = &cpu1_slot0_partition;
+
+		/*
+		 * Note: The SIO subsystem has a dedicated bus
+		 * interface for each core. Most of its peripherals are
+		 * duplicated and mapped to the same address in both cores,
+		 * so this can also be moved to rpi_pico2.dtsi
+		 */
+		zephyr,ipc = &ipc;
 	};
 };
 

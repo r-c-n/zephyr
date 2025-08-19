@@ -29,6 +29,9 @@ void soc_reset_hook(void)
 #if defined(CONFIG_SOC_RP2350_CPU1_ENABLE)
 
 #include <zephyr/devicetree.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ipm.h>
+
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
 
@@ -142,35 +145,37 @@ static int rpi_pico_reset_cpu1(sio_hw_t *const sio_regs, psm_hw_t *const psm_reg
 	return val == 0 ? 0 : -EIO;
 }
 
-static void rpi_pico_boot_cpu1(sio_hw_t *const sio_regs, uint32_t vector_table_addr,
-			       uint32_t stack_ptr, uint32_t pc)
+K_MSGQ_DEFINE(ip_msgq, sizeof(int), 4, 1);
+
+static void platform_ipm_callback(const struct device *dev, void *context,
+				uint32_t id, volatile void *data)
+{
+	LOG_DBG("%s: msg received from mb %d: 0x%p (%d)\n", __func__, id, data, *(int *)data);
+	k_msgq_put(&ip_msgq, (const void *)data, K_NO_WAIT);
+}
+
+static const struct device *const ipm_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
+
+static void rpi_pico_boot_cpu1(uint32_t vector_table_addr,
+			uint32_t stack_ptr, uint32_t pc)
 {
 	/* We synchronise with CPU1 and then we can hand over the memory addresses. */
 	uint32_t cmds[] = {0, 0, 1, vector_table_addr, stack_ptr, pc};
-	uint32_t seq = 0;
 
-	do {
-		uint32_t cmd = cmds[seq], rsp;
+	int i = 0;
+	while (i < sizeof(cmds) / sizeof(cmds[0])) {
+		int recv;
 
-		if (cmd == 0) {
-			/* Flush the mailbox by reading all pending messages. */
-			while (sio_regs->fifo_st & SIO_FIFO_ST_VLD_BITS) {
-				(void)sio_regs->fifo_rd;
-			}
-
-			/* Signal readiness to CPU1 */
-			__SEV();
-		}
-
-		rpi_pico_mailbox_put_blocking(sio_regs, cmd);
-		rsp = rpi_pico_mailbox_pop_blocking(sio_regs);
-
-		seq = (cmd == rsp) ? seq + 1 : 0;
-	} while (seq < ARRAY_SIZE(cmds));
+		ipm_send(ipm_handle, 0, 0, &cmds[i], sizeof(cmds[i]));
+		k_msgq_get(&ip_msgq, &recv, K_FOREVER);
+		i = cmds[i] == recv ? i + 1 : 0;
+	}
 }
 
 void soc_late_init_hook(void)
 {
+	int status;
 #if DT_NODE_EXISTS(DT_NODELABEL(cpu1_slot0_partition))
 	rpi_pico_load_cpu1_image();
 #endif /* DT_NODE_EXISTS(DT_NODELABEL(cpu1_slot0_partition)) */
@@ -187,6 +192,18 @@ void soc_late_init_hook(void)
 	}
 #endif /* CONFIG_SOC_RP2350_CPU1_ENABLE_CHECK_VTOR */
 
+	/* setup IPM */
+	if (!device_is_ready(ipm_handle)) {
+		LOG_ERR("IPM device is not ready\n");
+		return;
+	}
+	ipm_register_callback(ipm_handle, platform_ipm_callback, NULL);
+	status = ipm_set_enabled(ipm_handle, 1);
+	if (status) {
+		LOG_ERR("ipm_set_enabled failed\n");
+		return;
+	}
+
 	LOG_DBG("Launching CPU1 with vector table at 0x%p", (void *)cpu1_vector_table);
 
 	if (rpi_pico_reset_cpu1(sio_hw, psm_hw) != 0) {
@@ -194,6 +211,6 @@ void soc_late_init_hook(void)
 		return;
 	}
 
-	rpi_pico_boot_cpu1(sio_hw, (uint32_t)cpu1_vector_table, cpu1_sp, cpu1_pc);
+	rpi_pico_boot_cpu1((uint32_t)cpu1_vector_table, cpu1_sp, cpu1_pc);
 }
 #endif /* defined(CONFIG_SOC_RP2350_CPU1_ENABLE) */
