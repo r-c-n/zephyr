@@ -1,0 +1,5 @@
+config LIBPEER_SAMPLE_LOG_LEVEL
+	int "Default log level for the libpeer_integration app"
+	default 4
+
+source "Kconfig.zephyr"
