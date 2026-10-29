@@ -1,0 +1,70 @@
+# Copyright (c) 2026 Igalia S.L.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config ZEPHYR_LIBPEER_MODULE
+	bool
+
+menuconfig LIBPEER
+	bool "libpeer support"
+	depends on NETWORKING
+	depends on NET_UDP
+	depends on NET_SOCKETS
+	depends on NET_SOCKETS_SOCKOPT_TLS
+	depends on POSIX_API
+	depends on DNS_RESOLVER
+	depends on MDNS_RESOLVER
+	depends on PSA_CRYPTO
+	depends on MBEDTLS
+
+	help
+	  Enable libpeer
+
+choice LIBPEER_LOG_LEVEL_CHOICE
+	prompt "Max compiled-in log level for libpeer"
+	default LIBPEER_LOG_LEVEL_OFF
+	depends on LOG
+
+config LIBPEER_LOG_LEVEL_OFF
+	bool "Off"
+
+config LIBPEER_LOG_LEVEL_ERR
+	bool "Error"
+
+config LIBPEER_LOG_LEVEL_WRN
+	bool "Warning"
+
+config LIBPEER_LOG_LEVEL_INF
+	bool "Info"
+
+config LIBPEER_LOG_LEVEL_DBG
+	bool "Debug"
+
+endchoice
+
+config LIBPEER_LOG_LEVEL
+	int
+        depends on LOG
+	default 0 if LIBPEER_LOG_LEVEL_ERR
+	default 1 if LIBPEER_LOG_LEVEL_WRN
+	default 2 if LIBPEER_LOG_LEVEL_INF
+	default 3 if LIBPEER_LOG_LEVEL_DBG
+        default -1 if LIBPEER_LOG_LEVEL_OFF
+	help
+	  Log level for libpeer.
+
+config LIBPEER_AGENT_CONNCHECK_MAX
+	int "Maximum number of peer candidate connection checks"
+        default 1000
+	help
+	  When establishing a connection with a peer candidate, the
+	  connection will be checked for LIBPEER_AGENT_CONNCHECK_MAX
+	  peer_connection loops.
+
+config LIBPEER_AGENT_CONNCHECK_PERIOD
+	int "Peer candidate connection check period"
+        default 100
+	help
+	  When establishing a connection with a peer candidate, the
+	  connection will be checked once every
+	  LIBPEER_AGENT_CONNCHECK_PERIOD peer_connection loops
